@@ -1,0 +1,105 @@
+import os
+import shutil
+import subprocess
+import time
+from abc import ABC, abstractmethod
+
+
+class TextInserter(ABC):
+    @abstractmethod
+    def insert(self, text: str, auto_paste: bool = True) -> None:
+        ...
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        ...
+
+
+def create_inserter() -> "TextInserter":
+    """Wählt automatisch den richtigen Inserter basierend auf der Session."""
+    session = os.environ.get("XDG_SESSION_TYPE", "").lower()
+    if session == "wayland":
+        return WaylandTextInserter()
+    return XdotoolTextInserter()
+
+
+class XdotoolTextInserter(TextInserter):
+    """X11: Zwischenablage via xclip + Auto-Paste via xdotool."""
+
+    def is_available(self) -> bool:
+        return shutil.which("xdotool") is not None
+
+    def insert(self, text: str, auto_paste: bool = True) -> None:
+        _copy_xclip(text)
+
+        if not auto_paste or not self.is_available():
+            return
+
+        try:
+            result = subprocess.run(
+                ["xdotool", "getactivewindow"],
+                capture_output=True,
+                timeout=2,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                time.sleep(0.1)
+                subprocess.run(
+                    ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
+                    timeout=2,
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+
+class WaylandTextInserter(TextInserter):
+    """Wayland: Zwischenablage via wl-copy + Auto-Paste via ydotool."""
+
+    def is_available(self) -> bool:
+        return shutil.which("wl-copy") is not None
+
+    def insert(self, text: str, auto_paste: bool = True) -> None:
+        _copy_wl(text)
+
+        if not auto_paste or not shutil.which("ydotool"):
+            return
+
+        try:
+            time.sleep(0.15)
+            # Benötigt: sudo usermod -a -G input $USER + Neuanmeldung
+            subprocess.run(
+                ["ydotool", "key", "ctrl+v"],
+                timeout=2,
+                capture_output=True,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+
+def _copy_xclip(text: str) -> None:
+    try:
+        subprocess.run(
+            ["xclip", "-selection", "clipboard"],
+            input=text.encode("utf-8"),
+            timeout=2,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+        except Exception:
+            pass
+
+
+def _copy_wl(text: str) -> None:
+    try:
+        subprocess.run(
+            ["wl-copy"],
+            input=text.encode("utf-8"),
+            timeout=2,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+        except Exception:
+            pass
