@@ -5,6 +5,7 @@ from typing import Callable
 
 import sounddevice as sd
 
+import autostart
 import config
 from hotkey_manager import record_hotkey
 
@@ -219,6 +220,13 @@ class SettingsWindow:
                      state="readonly", width=28).grid(
             row=5, column=1, columnspan=2, sticky="w", **pad)
 
+        # Autostart
+        tk.Label(page, text="Autostart:", bg=CONTENT_BG, anchor="w", width=14).grid(
+            row=6, column=0, sticky="w", **pad)
+        autostart_var = tk.BooleanVar(value=autostart.is_enabled())
+        tk.Checkbutton(page, variable=autostart_var, bg=CONTENT_BG).grid(
+            row=6, column=1, sticky="w", **pad)
+
         # Speichern / Abbrechen
         def save():
             new_cfg = config.load()
@@ -228,12 +236,14 @@ class SettingsWindow:
             new_cfg["auto_paste"] = paste_var.get()
             selected_label = device_var.get()
             new_cfg["input_device"] = device_indices[device_labels.index(selected_label)]
+            new_cfg["autostart"] = autostart_var.get()
+            autostart.apply(autostart_var.get())
             config.save(new_cfg)
             self._on_save(new_cfg)
             win.destroy()
 
         btn_frame = tk.Frame(page, bg=CONTENT_BG)
-        btn_frame.grid(row=6, column=0, columnspan=3, sticky="e", padx=20, pady=(10, 18))
+        btn_frame.grid(row=7, column=0, columnspan=3, sticky="e", padx=20, pady=(10, 18))
         save_btn = tk.Button(btn_frame, text="Speichern", command=save, width=12)
         save_btn.pack(side="left", padx=(0, 8))
         tk.Button(btn_frame, text="Abbrechen", command=win.destroy, width=12).pack(side="left")
