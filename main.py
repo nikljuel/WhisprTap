@@ -45,6 +45,7 @@ class App:
         )
         self._inserter = create_inserter()
         self._hotkey_manager: HotkeyManager | None = None
+        self._load_generation: int = 0
         self._tray = TrayApp(
             on_settings=self._open_settings,
             on_reload_model=self._reload_model,
@@ -63,21 +64,31 @@ class App:
         threading.Thread(target=self._tray.start, daemon=True).start()
         self._tk_root.mainloop()  # Main-Thread blockiert hier
 
-    def _load_model(self) -> None:
-        self._tray.set_state(TrayState.LOADING)
+    def _load_model(self, transcriber=None, generation: int = 0) -> None:
+        if transcriber is None:
+            # Erster Start beim App-Launch
+            transcriber = self._transcriber
+            self._tray.set_state(TrayState.LOADING)
         try:
-            self._transcriber.load()
-            self._hotkey_manager = HotkeyManager(
-                hotkey=self._cfg["hotkey"],
-                on_press=self._on_hotkey,
-            )
-            self._hotkey_manager.start()
+            transcriber.load()
+            if generation != self._load_generation:
+                return  # neuerer Reload gestartet → diesen verwerfen
+            self._transcriber = transcriber
+            if self._hotkey_manager is None:
+                self._hotkey_manager = HotkeyManager(
+                    hotkey=self._cfg["hotkey"],
+                    on_press=self._on_hotkey,
+                )
+                self._hotkey_manager.start()
+            else:
+                self._hotkey_manager.update_hotkey(self._cfg["hotkey"])
             self._tray.set_state(TrayState.IDLE)
-            print("[WhisprTap] Modell geladen, bereit.")
+            print(f"[WhisprTap] Modell '{transcriber._model_size}' geladen, bereit.")
         except Exception as e:
-            print(f"[WhisprTap] Fehler beim Laden des Modells: {e}", file=sys.stderr)
-            self._tray.set_state(TrayState.ERROR)
-            self._tray.notify("WhisprTap — Fehler", f"Modell konnte nicht geladen werden: {e}")
+            if generation == self._load_generation:
+                print(f"[WhisprTap] Fehler beim Laden des Modells: {e}", file=sys.stderr)
+                self._tray.set_state(TrayState.ERROR)
+                self._tray.notify("WhisprTap — Fehler", f"Modell konnte nicht geladen werden: {e}")
 
     def _on_hotkey(self) -> None:
         if not self._transcriber.is_ready():
@@ -143,17 +154,22 @@ class App:
             self._reload_model()
 
     def _reload_model(self) -> None:
-        if self._hotkey_manager:
-            self._hotkey_manager.stop()
-            self._hotkey_manager = None
+        self._load_generation += 1
+        generation = self._load_generation
         if self._recorder.is_recording:
             self._recorder.stop()
-        self._transcriber = FasterWhisperTranscriber(
+        new_transcriber = FasterWhisperTranscriber(
             model_size=self._cfg["model_size"],
             language=self._cfg["language"],
             model_dir=self._cfg.get("model_dir"),
         )
-        threading.Thread(target=self._load_model, daemon=True).start()
+        self._tray.set_state(TrayState.LOADING)
+        self._tray.notify("WhisprTap", f"Lade Modell '{self._cfg['model_size']}'…")
+        threading.Thread(
+            target=self._load_model,
+            args=(new_transcriber, generation),
+            daemon=True,
+        ).start()
 
     def _quit(self) -> None:
         if self._recorder.is_recording:
