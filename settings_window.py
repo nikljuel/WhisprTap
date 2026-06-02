@@ -1,5 +1,7 @@
+import shutil
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
 from typing import Callable
 
@@ -24,6 +26,85 @@ def _get_input_devices() -> list[tuple[int, str]]:
         if dev["max_input_channels"] > 0:
             devices.append((i, dev["name"]))
     return devices
+
+
+def _scan_downloaded_models(model_dir: str) -> list[tuple[str, Path, int]]:
+    """Gibt Liste von (modellname, pfad, bytes) aller heruntergeladenen Modelle zurück."""
+    base = Path(model_dir)
+    if not base.exists():
+        return []
+    results = []
+    for d in sorted(base.iterdir()):
+        if not d.is_dir() or not d.name.startswith("models--"):
+            continue
+        # models--Systran--faster-whisper-medium  → medium
+        # models--Systran--faster-distil-whisper-large-v3 → distil-large-v3
+        name = d.name.removeprefix("models--Systran--faster-whisper-")
+        name = name.removeprefix("models--Systran--faster-distil-whisper-")
+        if name.startswith("models--"):
+            continue  # unbekanntes Format überspringen
+        blobs = d / "blobs"
+        size = sum(f.stat().st_size for f in blobs.iterdir() if f.is_file()) if blobs.exists() else 0
+        results.append((name, d, size))
+    return results
+
+
+def _fmt_size(n: int) -> str:
+    if n >= 1_000_000_000:
+        return f"{n / 1_000_000_000:.1f} GB"
+    return f"{n / 1_000_000:.0f} MB"
+
+
+def _open_model_manager(parent: tk.Toplevel, cfg: dict) -> None:
+    dlg = tk.Toplevel(parent)
+    dlg.title("Modelle verwalten")
+    dlg.resizable(False, False)
+    dlg.grab_set()
+
+    model_dir = cfg.get("model_dir", str(Path.home() / ".whisprtap" / "models"))
+
+    container = tk.Frame(dlg, bg=CONTENT_BG)
+    container.pack(fill="both", expand=True, padx=16, pady=12)
+
+    header = tk.Label(container, text="Heruntergeladene Modelle",
+                      bg=CONTENT_BG, font=("TkDefaultFont", 12, "bold"), anchor="w")
+    header.pack(fill="x", pady=(0, 8))
+
+    list_frame = tk.Frame(container, bg=CONTENT_BG)
+    list_frame.pack(fill="both", expand=True)
+
+    def refresh():
+        for w in list_frame.winfo_children():
+            w.destroy()
+        models = _scan_downloaded_models(model_dir)
+        if not models:
+            tk.Label(list_frame, text="Keine Modelle heruntergeladen.",
+                     bg=CONTENT_BG, fg="#888888").pack(anchor="w")
+            return
+        for name, path, size in models:
+            row = tk.Frame(list_frame, bg=CONTENT_BG)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=name, bg=CONTENT_BG, width=22, anchor="w",
+                     font=("TkDefaultFont", 10)).pack(side="left")
+            tk.Label(row, text=_fmt_size(size), bg=CONTENT_BG, fg="#555555",
+                     width=8, anchor="e").pack(side="left")
+
+            def _delete(p=path, n=name):
+                shutil.rmtree(p, ignore_errors=True)
+                # Locks-Verzeichnis ebenfalls entfernen
+                locks = Path(model_dir) / ".locks" / p.name
+                if locks.exists():
+                    shutil.rmtree(locks, ignore_errors=True)
+                refresh()
+
+            tk.Button(row, text="Löschen", fg="#cc0000",
+                      command=_delete, padx=6).pack(side="right", padx=(8, 0))
+            tk.Frame(list_frame, bg=SEPARATOR_COLOR, height=1).pack(fill="x", pady=(2, 0))
+
+    refresh()
+
+    tk.Button(container, text="Schließen", command=dlg.destroy, width=10).pack(
+        anchor="e", pady=(12, 0))
 
 
 class SettingsWindow:
@@ -192,7 +273,9 @@ class SettingsWindow:
         model_var = tk.StringVar(value=cfg["model_size"])
         model_box = ttk.Combobox(page, textvariable=model_var,
                      values=models, state="readonly", width=20)
-        model_box.grid(row=2, column=1, columnspan=2, sticky="w", **pad)
+        model_box.grid(row=2, column=1, sticky="w", **pad)
+        tk.Button(page, text="Verwalten", command=lambda: _open_model_manager(win, cfg)).grid(
+            row=2, column=2, sticky="w", padx=(0, 12), pady=6)
 
         model_info = {
             "tiny":             "~75 MB  — sehr schnell, ungenau",
