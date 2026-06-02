@@ -182,31 +182,58 @@ class SettingsWindow:
         tk.Button(page, text="Aufzeichnen", command=record).grid(row=1, column=2, **pad)
 
         # Modellgröße
-        tk.Label(page, text="Modellgröße:", bg=CONTENT_BG, anchor="w", width=14).grid(
+        tk.Label(page, text="Modell:", bg=CONTENT_BG, anchor="w", width=14).grid(
             row=2, column=0, sticky="w", **pad)
+        models = [
+            "tiny", "base", "small", "medium",
+            "large-v1", "large-v2", "large-v3",
+            "distil-small.en", "distil-medium.en", "distil-large-v2", "distil-large-v3",
+        ]
         model_var = tk.StringVar(value=cfg["model_size"])
-        ttk.Combobox(page, textvariable=model_var,
-                     values=["tiny", "small", "medium", "large"],
-                     state="readonly", width=16).grid(row=2, column=1, sticky="w", **pad)
+        model_box = ttk.Combobox(page, textvariable=model_var,
+                     values=models, state="readonly", width=20)
+        model_box.grid(row=2, column=1, columnspan=2, sticky="w", **pad)
+
+        model_info = {
+            "tiny":             "~75 MB  — sehr schnell, ungenau",
+            "base":             "~145 MB — schnell",
+            "small":            "~465 MB — gute Balance",
+            "medium":           "~1.5 GB — empfohlen",
+            "large-v1":         "~3 GB   — sehr genau",
+            "large-v2":         "~3 GB   — sehr genau (v2)",
+            "large-v3":         "~3 GB   — aktuellste Version",
+            "distil-small.en":  "~335 MB — schnell (nur Englisch)",
+            "distil-medium.en": "~790 MB — schnell (nur Englisch)",
+            "distil-large-v2":  "~1.5 GB — schnell, mehrsprachig",
+            "distil-large-v3":  "~1.5 GB — schnell, mehrsprachig (v3)",
+        }
+        info_lbl = tk.Label(page, text=model_info.get(cfg["model_size"], ""),
+                            bg=CONTENT_BG, fg="#888888",
+                            font=("TkDefaultFont", 9), anchor="w")
+        info_lbl.grid(row=3, column=0, columnspan=3, sticky="w", padx=20, pady=(0, 4))
+
+        def _on_model_change(*_):
+            info_lbl.config(text=model_info.get(model_var.get(), ""))
+        model_var.trace_add("write", _on_model_change)
 
         # Sprache
         tk.Label(page, text="Sprache:", bg=CONTENT_BG, anchor="w", width=14).grid(
-            row=3, column=0, sticky="w", **pad)
+            row=4, column=0, sticky="w", **pad)
         lang_var = tk.StringVar(value=cfg["language"])
         ttk.Combobox(page, textvariable=lang_var,
                      values=["de", "en", "auto"],
-                     state="readonly", width=16).grid(row=3, column=1, sticky="w", **pad)
+                     state="readonly", width=16).grid(row=4, column=1, sticky="w", **pad)
 
         # Auto-Paste
         tk.Label(page, text="Auto-Paste:", bg=CONTENT_BG, anchor="w", width=14).grid(
-            row=4, column=0, sticky="w", **pad)
+            row=5, column=0, sticky="w", **pad)
         paste_var = tk.BooleanVar(value=cfg["auto_paste"])
         tk.Checkbutton(page, variable=paste_var, bg=CONTENT_BG).grid(
-            row=4, column=1, sticky="w", **pad)
+            row=5, column=1, sticky="w", **pad)
 
         # Mikrofon
         tk.Label(page, text="Mikrofon:", bg=CONTENT_BG, anchor="w", width=14).grid(
-            row=5, column=0, sticky="w", **pad)
+            row=6, column=0, sticky="w", **pad)
         input_devices = _get_input_devices()
         device_labels = ["System-Standard"] + [f"{i}: {name}" for i, name in input_devices]
         device_indices = [None] + [i for i, _ in input_devices]
@@ -218,14 +245,14 @@ class SettingsWindow:
         device_var = tk.StringVar(value=default_device_label)
         ttk.Combobox(page, textvariable=device_var, values=device_labels,
                      state="readonly", width=28).grid(
-            row=5, column=1, columnspan=2, sticky="w", **pad)
+            row=6, column=1, columnspan=2, sticky="w", **pad)
 
         # Autostart
         tk.Label(page, text="Autostart:", bg=CONTENT_BG, anchor="w", width=14).grid(
-            row=6, column=0, sticky="w", **pad)
+            row=7, column=0, sticky="w", **pad)
         autostart_var = tk.BooleanVar(value=autostart.is_enabled())
         tk.Checkbutton(page, variable=autostart_var, bg=CONTENT_BG).grid(
-            row=6, column=1, sticky="w", **pad)
+            row=7, column=1, sticky="w", **pad)
 
         # Speichern / Abbrechen
         def save():
@@ -243,7 +270,7 @@ class SettingsWindow:
             win.destroy()
 
         btn_frame = tk.Frame(page, bg=CONTENT_BG)
-        btn_frame.grid(row=7, column=0, columnspan=3, sticky="e", padx=20, pady=(10, 18))
+        btn_frame.grid(row=8, column=0, columnspan=3, sticky="e", padx=20, pady=(10, 18))
         save_btn = tk.Button(btn_frame, text="Speichern", command=save, width=12)
         save_btn.pack(side="left", padx=(0, 8))
         tk.Button(btn_frame, text="Abbrechen", command=win.destroy, width=12).pack(side="left")
