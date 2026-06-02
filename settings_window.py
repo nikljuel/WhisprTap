@@ -295,10 +295,6 @@ class SettingsWindow:
                             font=("TkDefaultFont", 9), anchor="w")
         info_lbl.grid(row=3, column=0, columnspan=3, sticky="w", padx=20, pady=(0, 4))
 
-        def _on_model_change(*_):
-            info_lbl.config(text=model_info.get(model_var.get(), ""))
-        model_var.trace_add("write", _on_model_change)
-
         # Sprache
         tk.Label(page, text="Sprache:", bg=CONTENT_BG, anchor="w", width=14).grid(
             row=4, column=0, sticky="w", **pad)
@@ -307,16 +303,37 @@ class SettingsWindow:
                      values=["de", "en", "auto"],
                      state="readonly", width=16).grid(row=4, column=1, sticky="w", **pad)
 
+        warn_lbl = tk.Label(page, text="", bg=CONTENT_BG, fg="#cc6600",
+                            font=("TkDefaultFont", 9), anchor="w")
+        warn_lbl.grid(row=5, column=0, columnspan=3, sticky="w", padx=20, pady=(0, 2))
+
+        def _update_warning(*_):
+            en_only = model_var.get().endswith(".en")
+            non_en = lang_var.get() != "en"
+            if en_only and non_en:
+                warn_lbl.config(text=f"⚠  {model_var.get()} unterstützt nur Englisch — Sprache auf 'en' setzen.")
+            else:
+                warn_lbl.config(text="")
+
+        model_var.trace_add("write", _update_warning)
+        lang_var.trace_add("write", _update_warning)
+
+        def _on_model_change(*_):
+            info_lbl.config(text=model_info.get(model_var.get(), ""))
+            _update_warning()
+        model_var.trace_add("write", _on_model_change)
+        _update_warning()
+
         # Auto-Paste
         tk.Label(page, text="Auto-Paste:", bg=CONTENT_BG, anchor="w", width=14).grid(
-            row=5, column=0, sticky="w", **pad)
+            row=6, column=0, sticky="w", **pad)
         paste_var = tk.BooleanVar(value=cfg["auto_paste"])
         tk.Checkbutton(page, variable=paste_var, bg=CONTENT_BG).grid(
-            row=5, column=1, sticky="w", **pad)
+            row=6, column=1, sticky="w", **pad)
 
         # Mikrofon
         tk.Label(page, text="Mikrofon:", bg=CONTENT_BG, anchor="w", width=14).grid(
-            row=6, column=0, sticky="w", **pad)
+            row=7, column=0, sticky="w", **pad)
         input_devices = _get_input_devices()
         device_labels = ["System-Standard"] + [f"{i}: {name}" for i, name in input_devices]
         device_indices = [None] + [i for i, _ in input_devices]
@@ -328,14 +345,14 @@ class SettingsWindow:
         device_var = tk.StringVar(value=default_device_label)
         ttk.Combobox(page, textvariable=device_var, values=device_labels,
                      state="readonly", width=28).grid(
-            row=6, column=1, columnspan=2, sticky="w", **pad)
+            row=7, column=1, columnspan=2, sticky="w", **pad)
 
         # Autostart
         tk.Label(page, text="Autostart:", bg=CONTENT_BG, anchor="w", width=14).grid(
-            row=7, column=0, sticky="w", **pad)
+            row=8, column=0, sticky="w", **pad)
         autostart_var = tk.BooleanVar(value=autostart.is_enabled())
         tk.Checkbutton(page, variable=autostart_var, bg=CONTENT_BG).grid(
-            row=7, column=1, sticky="w", **pad)
+            row=8, column=1, sticky="w", **pad)
 
         # Speichern / Abbrechen
         def save():
@@ -353,7 +370,7 @@ class SettingsWindow:
             win.destroy()
 
         btn_frame = tk.Frame(page, bg=CONTENT_BG)
-        btn_frame.grid(row=8, column=0, columnspan=3, sticky="e", padx=20, pady=(10, 18))
+        btn_frame.grid(row=9, column=0, columnspan=3, sticky="e", padx=20, pady=(10, 18))
         save_btn = tk.Button(btn_frame, text="Speichern", command=save, width=12)
         save_btn.pack(side="left", padx=(0, 8))
         tk.Button(btn_frame, text="Abbrechen", command=win.destroy, width=12).pack(side="left")
