@@ -38,8 +38,8 @@ class XdotoolTextInserter(TextInserter):
         try:
             time.sleep(0.1)
             subprocess.run(
-                ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
-                timeout=2,
+                ["xdotool", "type", "--clearmodifiers", "--delay", "0", "--", text],
+                timeout=10,
             )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
@@ -57,24 +57,32 @@ class WaylandTextInserter(TextInserter):
         if not auto_paste:
             return
 
-        time.sleep(0.15)
+        time.sleep(0.1)
 
-        # Versuch 1: ydotool (braucht /dev/uinput-Gruppenrechte, siehe scripts/setup_uinput.sh)
+        # Versuch 1: ydotool type (braucht /dev/uinput-Gruppenrechte, siehe scripts/setup_uinput.sh)
         if shutil.which("ydotool"):
             result = subprocess.run(
-                ["ydotool", "key", "ctrl+v"],
-                timeout=2,
+                ["ydotool", "type", "--", text],
+                timeout=10,
                 capture_output=True,
             )
             if result.returncode == 0:
                 return
 
-        # Versuch 2: xdotool via XWayland (DISPLAY=:0)
+        # Versuch 2: wtype (native Wayland, keine Root-Rechte nötig)
+        if shutil.which("wtype"):
+            try:
+                subprocess.run(["wtype", "--", text], timeout=10, capture_output=True)
+                return
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+        # Versuch 3: xdotool type via XWayland
         if shutil.which("xdotool") and os.environ.get("DISPLAY"):
             try:
                 subprocess.run(
-                    ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
-                    timeout=2,
+                    ["xdotool", "type", "--clearmodifiers", "--delay", "0", "--", text],
+                    timeout=10,
                     capture_output=True,
                 )
             except (subprocess.TimeoutExpired, FileNotFoundError):

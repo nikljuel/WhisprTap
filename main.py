@@ -20,11 +20,11 @@ def check_dependencies() -> list[str]:
     if session == "wayland":
         if not shutil.which("wl-copy"):
             warnings.append("wl-clipboard nicht gefunden. Installiere: sudo apt install wl-clipboard")
-        if not shutil.which("ydotool"):
+        if not shutil.which("ydotool") and not shutil.which("wtype"):
             warnings.append(
-                "ydotool nicht gefunden — Auto-Paste deaktiviert. "
-                "Installiere: sudo apt install ydotool"
-                " && sudo usermod -a -G input $USER (dann neu anmelden)"
+                "Weder ydotool noch wtype gefunden — Text-Eingabe deaktiviert. "
+                "Empfohlen: sudo apt install wtype  "
+                "oder: sudo apt install ydotool && sudo usermod -a -G input $USER (dann neu anmelden)"
             )
     else:
         if not shutil.which("xdotool"):
