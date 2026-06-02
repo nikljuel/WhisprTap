@@ -38,8 +38,8 @@ class XdotoolTextInserter(TextInserter):
         try:
             time.sleep(0.1)
             subprocess.run(
-                ["xdotool", "type", "--clearmodifiers", "--delay", "0", "--", text],
-                timeout=10,
+                ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
+                timeout=2,
             )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
@@ -59,34 +59,52 @@ class WaylandTextInserter(TextInserter):
 
         time.sleep(0.1)
 
-        # Versuch 1: ydotool type (braucht /dev/uinput-Gruppenrechte, siehe scripts/setup_uinput.sh)
+        # Versuch 1: ydotool type — tippt zeichenweise ein (funktioniert in Terminal + Editoren)
+        # ydotool 0.1.8 ignoriert das Tastaturlayout und nutzt QWERTY-Keycodes. Auf QWERTZ
+        # werden Z und Y vertauscht → wir kompensieren durch Vorkorrektur im Text.
         if shutil.which("ydotool"):
             result = subprocess.run(
-                ["ydotool", "type", "--", text],
-                timeout=10,
+                ["ydotool", "type", "--", _qwertz_fix(text)],
+                timeout=30,
                 capture_output=True,
             )
             if result.returncode == 0:
                 return
 
-        # Versuch 2: wtype (native Wayland, keine Root-Rechte nötig)
-        if shutil.which("wtype"):
-            try:
-                subprocess.run(["wtype", "--", text], timeout=10, capture_output=True)
-                return
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
-
-        # Versuch 3: xdotool type via XWayland
+        # Versuch 2: xdotool type via XWayland (layout-aware, kein Z/Y-Problem)
         if shutil.which("xdotool") and os.environ.get("DISPLAY"):
             try:
                 subprocess.run(
                     ["xdotool", "type", "--clearmodifiers", "--delay", "0", "--", text],
-                    timeout=10,
+                    timeout=30,
                     capture_output=True,
                 )
+                return
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 pass
+
+        # Fallback: Ctrl+V aus Zwischenablage (Text liegt bereits dort via wl-copy)
+        if shutil.which("ydotool"):
+            subprocess.run(["ydotool", "key", "ctrl+v"], timeout=2, capture_output=True)
+
+
+def _qwertz_fix(text: str) -> str:
+    """Kompensiert ydotool's QWERTY-Keycode-Mapping auf QWERTZ-Tastaturen.
+    ydotool sendet für 'z' → KEY_Z, was auf QWERTZ 'y' produziert. Vorher tauschen
+    damit der Compositor das richtige Zeichen ausgibt."""
+    result = []
+    for ch in text:
+        if ch == 'z':
+            result.append('y')
+        elif ch == 'y':
+            result.append('z')
+        elif ch == 'Z':
+            result.append('Y')
+        elif ch == 'Y':
+            result.append('Z')
+        else:
+            result.append(ch)
+    return ''.join(result)
 
 
 def _copy_xclip(text: str) -> None:

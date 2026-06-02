@@ -42,8 +42,7 @@ class FasterWhisperTranscriber(Transcriber):
             language=self._language if self._language != "auto" else None,
             beam_size=5,
             vad_filter=True,
-            no_speech_threshold=0.6,
+            no_speech_threshold=0.8,
+            condition_on_previous_text=True,
         )
-        return " ".join(
-            seg.text.strip() for seg in segments if seg.no_speech_prob < 0.6
-        ).strip()
+        return " ".join(seg.text.strip() for seg in segments).strip()
