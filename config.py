@@ -10,6 +10,7 @@ DEFAULTS = {
     "language": "de",
     "auto_paste": True,
     "model_dir": str(Path.home() / ".whisprtap" / "models"),
+    "input_device": None,
 }
 
 

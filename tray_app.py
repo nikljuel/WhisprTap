@@ -75,7 +75,7 @@ class TrayApp:
 
     def start(self) -> None:
         menu = pystray.Menu(
-            pystray.MenuItem("Einstellungen...", self._settings_clicked),
+            pystray.MenuItem("Einstellungen...", self._settings_clicked, default=True),
             pystray.MenuItem("Modell neu laden", self._reload_clicked),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Beenden", self._quit_clicked),

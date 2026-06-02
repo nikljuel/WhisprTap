@@ -36,17 +36,11 @@ class XdotoolTextInserter(TextInserter):
             return
 
         try:
-            result = subprocess.run(
-                ["xdotool", "getactivewindow"],
-                capture_output=True,
+            time.sleep(0.1)
+            subprocess.run(
+                ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
                 timeout=2,
             )
-            if result.returncode == 0 and result.stdout.strip():
-                time.sleep(0.1)
-                subprocess.run(
-                    ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
-                    timeout=2,
-                )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
@@ -60,19 +54,31 @@ class WaylandTextInserter(TextInserter):
     def insert(self, text: str, auto_paste: bool = True) -> None:
         _copy_wl(text)
 
-        if not auto_paste or not shutil.which("ydotool"):
+        if not auto_paste:
             return
 
-        try:
-            time.sleep(0.15)
-            # Benötigt: sudo usermod -a -G input $USER + Neuanmeldung
-            subprocess.run(
+        time.sleep(0.15)
+
+        # Versuch 1: ydotool (braucht /dev/uinput-Gruppenrechte, siehe scripts/setup_uinput.sh)
+        if shutil.which("ydotool"):
+            result = subprocess.run(
                 ["ydotool", "key", "ctrl+v"],
                 timeout=2,
                 capture_output=True,
             )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+            if result.returncode == 0:
+                return
+
+        # Versuch 2: xdotool via XWayland (DISPLAY=:0)
+        if shutil.which("xdotool") and os.environ.get("DISPLAY"):
+            try:
+                subprocess.run(
+                    ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
+                    timeout=2,
+                    capture_output=True,
+                )
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
 
 
 def _copy_xclip(text: str) -> None:

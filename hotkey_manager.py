@@ -37,12 +37,14 @@ class HotkeyManager:
         self._hotkey = hotkey
         self._on_press = on_press
         self._stop_event = threading.Event()
+        self._stop_event.set()  # kein start() noch aufgerufen
         self._threads: list[threading.Thread] = []
 
     def start(self) -> None:
-        self._stop_event.clear()
+        stop_event = threading.Event()
+        self._stop_event = stop_event
         for device in _find_keyboards():
-            t = threading.Thread(target=self._listen, args=(device,), daemon=True)
+            t = threading.Thread(target=self._listen, args=(device, stop_event), daemon=True)
             t.start()
             self._threads.append(t)
 
@@ -55,12 +57,12 @@ class HotkeyManager:
         self._hotkey = hotkey
         self.start()
 
-    def _listen(self, device: evdev.InputDevice) -> None:
+    def _listen(self, device: evdev.InputDevice, stop_event: threading.Event) -> None:
         target = _key_to_code(self._hotkey)
         if target is None:
             return
         try:
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 r, _, _ = select.select([device.fd], [], [], 0.1)
                 if r:
                     for event in device.read():

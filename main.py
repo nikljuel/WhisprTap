@@ -37,7 +37,7 @@ def check_dependencies() -> list[str]:
 class App:
     def __init__(self):
         self._cfg = config.load()
-        self._recorder = Recorder()
+        self._recorder = Recorder(device=self._cfg.get("input_device"))
         self._transcriber = FasterWhisperTranscriber(
             model_size=self._cfg["model_size"],
             language=self._cfg["language"],
@@ -106,7 +106,7 @@ class App:
         try:
             audio_path = self._recorder.stop()
             if audio_path is None:
-                self._tray.set_state(TrayState.IDLE)
+                self._tray.notify("WhisprTap", "Aufnahme zu kurz.")
                 return
 
             text = self._transcriber.transcribe(audio_path)
@@ -123,7 +123,8 @@ class App:
             print(f"[WhisprTap] Transkriptionsfehler: {e}", file=sys.stderr)
             self._tray.notify("WhisprTap - Fehler", f"Transkription fehlgeschlagen: {e}")
         finally:
-            self._tray.set_state(TrayState.IDLE)
+            if not self._recorder.is_recording:
+                self._tray.set_state(TrayState.IDLE)
 
     def _open_settings(self) -> None:
         self._settings_window.open()
@@ -132,6 +133,8 @@ class App:
         self._cfg = new_cfg
         if self._hotkey_manager:
             self._hotkey_manager.update_hotkey(new_cfg["hotkey"])
+        if not self._recorder.is_recording:
+            self._recorder = Recorder(device=new_cfg.get("input_device"))
         model_changed = (
             new_cfg["model_size"] != self._transcriber._model_size
             or new_cfg["language"] != self._transcriber._language
