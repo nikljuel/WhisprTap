@@ -1,7 +1,8 @@
 faster-whisper
 sounddevice
 numpy
-evdev
-pystray
-pillow
-pyperclip
+rumps
+pyobjc-framework-Cocoa
+pyobjc-framework-Quartz
+pyobjc-framework-ApplicationServices
+pynput

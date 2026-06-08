@@ -35,7 +35,7 @@ class FasterWhisperTranscriber(Transcriber):
 
     def transcribe(self, audio_path: Path) -> str:
         if not self._model:
-            raise RuntimeError("Modell nicht geladen")
+            raise RuntimeError("Model is not loaded")
 
         segments, _ = self._model.transcribe(
             str(audio_path),

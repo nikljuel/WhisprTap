@@ -40,7 +40,7 @@ class Recorder:
             self._recording = True
 
     def _resolve_channels(self) -> int:
-        """Gibt 1 zurück wenn möglich, sonst die native Kanalanzahl des Geräts."""
+        """Use mono when possible, otherwise use the device's native input channels."""
         try:
             sd.check_input_settings(device=self._device, channels=1, samplerate=SAMPLE_RATE)
             return 1
@@ -66,7 +66,7 @@ class Recorder:
 
         audio = np.concatenate(frames, axis=0)
 
-        # Stereo → Mono mischen wenn nötig
+        # Mix multi-channel input down to mono when needed.
         if audio.ndim == 2 and audio.shape[1] > 1:
             audio = audio.mean(axis=1).astype(np.int16)
         elif audio.ndim == 2:

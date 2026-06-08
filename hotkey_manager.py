@@ -1,106 +1,120 @@
-import select
 import threading
 from typing import Callable
 
-import evdev
+from pynput import keyboard
+
+_ALIASES = {
+    "cmd": "command",
+    "cmd_l": "command",
+    "cmd_r": "command",
+    "command_l": "command",
+    "command_r": "command",
+    "ctrl": "control",
+    "ctrl_l": "control",
+    "ctrl_r": "control",
+    "control_l": "control",
+    "control_r": "control",
+    "alt_l": "alt",
+    "alt_r": "alt",
+    "option": "alt",
+    "option_l": "alt",
+    "option_r": "alt",
+    "esc": "escape",
+    "return": "enter",
+}
 
 
-def _key_to_code(name: str) -> int | None:
-    code = getattr(evdev.ecodes, "KEY_" + name.upper(), None)
-    return code
+def normalize_hotkey(value: object) -> str | None:
+    """Return the stable config name for a pynput key or user-entered key name."""
+    if value is None:
+        return None
 
+    name = getattr(value, "name", None)
+    if not name:
+        char = getattr(value, "char", None)
+        if char:
+            name = char
+        else:
+            name = str(value)
 
-def _code_to_key(code: int) -> str:
-    name = evdev.ecodes.KEY.get(code, "")
-    if isinstance(name, list):
-        name = name[0]
-    if isinstance(name, str) and name.startswith("KEY_"):
-        return name[4:].lower()
-    return ""
+    key = str(name).strip().lower()
+    if key.startswith("<") and key.endswith(">"):
+        key = key[1:-1]
+    if key.startswith("key."):
+        key = key[4:]
+    if key.startswith("'") and key.endswith("'") and len(key) >= 2:
+        key = key[1:-1]
 
-
-def _find_keyboards() -> list:
-    devices = []
-    for path in evdev.list_devices():
-        try:
-            d = evdev.InputDevice(path)
-            keys = d.capabilities().get(evdev.ecodes.EV_KEY, [])
-            if evdev.ecodes.KEY_A in keys:
-                devices.append(d)
-        except Exception:
-            pass
-    return devices
+    key = key.replace(" ", "")
+    if not key:
+        return None
+    return _ALIASES.get(key, key)
 
 
 class HotkeyManager:
     def __init__(self, hotkey: str, on_press: Callable[[], None]):
-        self._hotkey = hotkey
+        self._hotkey = normalize_hotkey(hotkey)
         self._on_press = on_press
-        self._stop_event = threading.Event()
-        self._stop_event.set()  # kein start() noch aufgerufen
-        self._threads: list[threading.Thread] = []
+        self._listener: keyboard.Listener | None = None
+        self._pressed: set[str] = set()
+        self._lock = threading.Lock()
 
     def start(self) -> None:
-        stop_event = threading.Event()
-        self._stop_event = stop_event
-        for device in _find_keyboards():
-            t = threading.Thread(target=self._listen, args=(device, stop_event), daemon=True)
-            t.start()
-            self._threads.append(t)
+        self.stop()
+        self._listener = keyboard.Listener(
+            on_press=self._handle_press,
+            on_release=self._handle_release,
+        )
+        self._listener.start()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        self._threads.clear()
+        listener = self._listener
+        self._listener = None
+        with self._lock:
+            self._pressed.clear()
+        if listener:
+            listener.stop()
 
     def update_hotkey(self, hotkey: str) -> None:
         self.stop()
-        self._hotkey = hotkey
+        self._hotkey = normalize_hotkey(hotkey)
         self.start()
 
-    def _listen(self, device: evdev.InputDevice, stop_event: threading.Event) -> None:
-        target = _key_to_code(self._hotkey)
-        if target is None:
+    def _handle_press(self, key: keyboard.Key | keyboard.KeyCode) -> None:
+        pressed = normalize_hotkey(key)
+        if pressed != self._hotkey:
             return
-        try:
-            while not stop_event.is_set():
-                r, _, _ = select.select([device.fd], [], [], 0.1)
-                if r:
-                    for event in device.read():
-                        if (event.type == evdev.ecodes.EV_KEY
-                                and event.code == target
-                                and event.value == 1):
-                            self._on_press()
-        except Exception:
-            pass
+
+        with self._lock:
+            if pressed in self._pressed:
+                return
+            self._pressed.add(pressed)
+
+        self._on_press()
+
+    def _handle_release(self, key: keyboard.Key | keyboard.KeyCode) -> None:
+        released = normalize_hotkey(key)
+        if released:
+            with self._lock:
+                self._pressed.discard(released)
 
 
 def record_hotkey(timeout: float = 5.0) -> str | None:
-    """Wartet auf einen einzelnen Tastendruck und gibt den Hotkey-Namen zurück."""
+    """Wait for one key press and return its normalized config name."""
     result: list[str] = []
     done = threading.Event()
 
-    def listen_device(device: evdev.InputDevice) -> None:
-        try:
-            while not done.is_set():
-                r, _, _ = select.select([device.fd], [], [], 0.1)
-                if r:
-                    for event in device.read():
-                        if event.type == evdev.ecodes.EV_KEY and event.value == 1:
-                            name = _code_to_key(event.code)
-                            if name and not result:
-                                result.append(name)
-                                done.set()
-        except Exception:
-            pass
+    def on_press(key: keyboard.Key | keyboard.KeyCode) -> bool:
+        name = normalize_hotkey(key)
+        if name:
+            result.append(name)
+            done.set()
+            return False
+        return True
 
-    threads = [
-        threading.Thread(target=listen_device, args=(d,), daemon=True)
-        for d in _find_keyboards()
-    ]
-    for t in threads:
-        t.start()
-
+    listener = keyboard.Listener(on_press=on_press)
+    listener.start()
     done.wait(timeout=timeout)
-    done.set()
+    listener.stop()
 
     return result[0] if result else None

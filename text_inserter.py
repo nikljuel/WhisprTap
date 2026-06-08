@@ -1,13 +1,29 @@
-import os
-import shutil
-import subprocess
+from __future__ import annotations
+
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Callable
+
+import AppKit
+import ApplicationServices
+import Quartz
+
+
+COMMAND_V_KEYCODE = 9
+
+
+@dataclass(frozen=True)
+class InsertionResult:
+    copied: bool
+    paste_attempted: bool
+    pasted: bool
+    error: str | None = None
 
 
 class TextInserter(ABC):
     @abstractmethod
-    def insert(self, text: str, auto_paste: bool = True) -> None:
+    def insert(self, text: str, auto_paste: bool = True) -> InsertionResult:
         ...
 
     @abstractmethod
@@ -16,122 +32,81 @@ class TextInserter(ABC):
 
 
 def create_inserter() -> "TextInserter":
-    """Wählt automatisch den richtigen Inserter basierend auf der Session."""
-    session = os.environ.get("XDG_SESSION_TYPE", "").lower()
-    if session == "wayland":
-        return WaylandTextInserter()
-    return XdotoolTextInserter()
+    return MacOSTextInserter()
 
 
-class XdotoolTextInserter(TextInserter):
-    """X11: Zwischenablage via xclip + Auto-Paste via xdotool."""
+class QuartzCommandVEventSender:
+    def __init__(self, quartz=Quartz):
+        self._quartz = quartz
+
+    def send_command_v(self) -> None:
+        down = self._quartz.CGEventCreateKeyboardEvent(None, COMMAND_V_KEYCODE, True)
+        up = self._quartz.CGEventCreateKeyboardEvent(None, COMMAND_V_KEYCODE, False)
+        if down is None or up is None:
+            raise RuntimeError("Could not create Command-V keyboard event.")
+
+        for event in (down, up):
+            self._quartz.CGEventSetFlags(event, self._quartz.kCGEventFlagMaskCommand)
+            self._quartz.CGEventPost(self._quartz.kCGHIDEventTap, event)
+
+
+class MacOSTextInserter(TextInserter):
+    """macOS insertion through the clipboard and an optional Command-V paste."""
+
+    def __init__(
+        self,
+        *,
+        pasteboard=None,
+        accessibility_check: Callable[[], bool] | None = None,
+        event_sender: QuartzCommandVEventSender | None = None,
+        paste_delay: float = 0.1,
+    ):
+        self._pasteboard = pasteboard or AppKit.NSPasteboard.generalPasteboard()
+        self._accessibility_check = accessibility_check or ApplicationServices.AXIsProcessTrusted
+        self._event_sender = event_sender or QuartzCommandVEventSender()
+        self._paste_delay = paste_delay
 
     def is_available(self) -> bool:
-        return shutil.which("xdotool") is not None
+        return True
 
-    def insert(self, text: str, auto_paste: bool = True) -> None:
-        _copy_xclip(text)
-
-        if not auto_paste or not self.is_available():
-            return
-
+    def insert(self, text: str, auto_paste: bool = True) -> InsertionResult:
         try:
-            time.sleep(0.1)
-            subprocess.run(
-                ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
-                timeout=2,
+            self._copy_to_clipboard(text)
+        except Exception as exc:
+            return InsertionResult(
+                copied=False,
+                paste_attempted=False,
+                pasted=False,
+                error=f"Clipboard copy failed: {exc}",
             )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-
-class WaylandTextInserter(TextInserter):
-    """Wayland: Zwischenablage via wl-copy + Auto-Paste via ydotool."""
-
-    def is_available(self) -> bool:
-        return shutil.which("wl-copy") is not None
-
-    def insert(self, text: str, auto_paste: bool = True) -> None:
-        _copy_wl(text)
 
         if not auto_paste:
-            return
+            return InsertionResult(copied=True, paste_attempted=False, pasted=False)
 
-        time.sleep(0.1)
-
-        # Versuch 1: ydotool type — tippt zeichenweise ein (funktioniert in Terminal + Editoren)
-        # ydotool 0.1.8 ignoriert das Tastaturlayout und nutzt QWERTY-Keycodes. Auf QWERTZ
-        # werden Z und Y vertauscht → wir kompensieren durch Vorkorrektur im Text.
-        if shutil.which("ydotool"):
-            result = subprocess.run(
-                ["ydotool", "type", "--", _qwertz_fix(text)],
-                timeout=30,
-                capture_output=True,
+        if not self._accessibility_check():
+            return InsertionResult(
+                copied=True,
+                paste_attempted=True,
+                pasted=False,
+                error="Accessibility permission is required for Auto-Paste.",
             )
-            if result.returncode == 0:
-                return
 
-        # Versuch 2: xdotool type via XWayland (layout-aware, kein Z/Y-Problem)
-        if shutil.which("xdotool") and os.environ.get("DISPLAY"):
-            try:
-                subprocess.run(
-                    ["xdotool", "type", "--clearmodifiers", "--delay", "0", "--", text],
-                    timeout=30,
-                    capture_output=True,
-                )
-                return
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
-
-        # Fallback: Ctrl+V aus Zwischenablage (Text liegt bereits dort via wl-copy)
-        if shutil.which("ydotool"):
-            subprocess.run(["ydotool", "key", "ctrl+v"], timeout=2, capture_output=True)
-
-
-def _qwertz_fix(text: str) -> str:
-    """Kompensiert ydotool's QWERTY-Keycode-Mapping auf QWERTZ-Tastaturen.
-    ydotool sendet für 'z' → KEY_Z, was auf QWERTZ 'y' produziert. Vorher tauschen
-    damit der Compositor das richtige Zeichen ausgibt."""
-    result = []
-    for ch in text:
-        if ch == 'z':
-            result.append('y')
-        elif ch == 'y':
-            result.append('z')
-        elif ch == 'Z':
-            result.append('Y')
-        elif ch == 'Y':
-            result.append('Z')
-        else:
-            result.append(ch)
-    return ''.join(result)
-
-
-def _copy_xclip(text: str) -> None:
-    try:
-        subprocess.run(
-            ["xclip", "-selection", "clipboard"],
-            input=text.encode("utf-8"),
-            timeout=2,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
         try:
-            import pyperclip
-            pyperclip.copy(text)
-        except Exception:
-            pass
+            if self._paste_delay > 0:
+                time.sleep(self._paste_delay)
+            self._event_sender.send_command_v()
+        except Exception as exc:
+            return InsertionResult(
+                copied=True,
+                paste_attempted=True,
+                pasted=False,
+                error=f"Command-V paste failed: {exc}",
+            )
 
+        return InsertionResult(copied=True, paste_attempted=True, pasted=True)
 
-def _copy_wl(text: str) -> None:
-    try:
-        subprocess.run(
-            ["wl-copy"],
-            input=text.encode("utf-8"),
-            timeout=2,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        try:
-            import pyperclip
-            pyperclip.copy(text)
-        except Exception:
-            pass
+    def _copy_to_clipboard(self, text: str) -> None:
+        self._pasteboard.clearContents()
+        copied = self._pasteboard.setString_forType_(text, AppKit.NSPasteboardTypeString)
+        if not copied:
+            raise RuntimeError("NSPasteboard rejected plain text content.")

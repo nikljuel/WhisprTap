@@ -1,154 +1,76 @@
 # WhisprTap
 
-System-weiter Push-to-Talk-Transkriptor für Linux. Drücke einen Hotkey, sprich, drücke nochmal — der Text wird automatisch an der Cursorposition eingefügt oder in die Zwischenablage kopiert.
+WhisprTap is a local push-to-talk transcription app for macOS. Press the hotkey, speak, press the hotkey again, and WhisprTap transcribes with `faster-whisper`, copies the text to the clipboard, and can paste it into the active app.
 
-## Voraussetzungen
+## Requirements
 
-- Linux (X11 oder Wayland/GNOME)
-- Python 3.9+
-- ~1,5 GB freier Speicher für das Whisper-Modell
-- 8 GB RAM (16 GB empfohlen für flüssige Transkription)
-
----
+- macOS on Intel or Apple Silicon
+- Python 3.10+
+- Microphone permission for Terminal or the Python app you use to launch WhisprTap
+- Accessibility permission for Terminal or the Python app, required for the global hotkey and Auto-Paste
+- About 1.5 GB of free disk space for the default `medium` model
+- 8 GB RAM, 16 GB recommended
 
 ## Installation
 
-### 1. System-Pakete
-
-**X11:**
 ```bash
-sudo apt install xdotool xclip python3-tk libportaudio2
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-**Wayland (GNOME):**
-```bash
-sudo apt install wl-clipboard ydotool python3-tk libportaudio2
-```
+On first launch, `faster-whisper` downloads the configured model to `~/.whisprtap/models`. Transcription runs locally after the model is available.
 
-### 2. uinput-Rechte einrichten (nur Wayland)
-
-Damit `ydotool` Text ohne Root-Rechte eintippen kann, muss die `input`-Gruppe Zugriff auf `/dev/uinput` bekommen. Einmalig ausführen:
+## Start
 
 ```bash
-sudo bash scripts/setup_uinput.sh
+.venv/bin/python main.py
 ```
 
-Das Skript legt eine Udev-Regel an und lädt sie sofort. Kein Neustart oder Neuanmeldung nötig, solange du bereits in der `input`-Gruppe bist (prüfen mit `groups`). Falls nicht:
+WhisprTap appears in the macOS menu bar.
 
-```bash
-sudo usermod -a -G input $USER
-# danach neu anmelden
-```
+## macOS Permissions
 
-Testen ob alles klappt (Cursor in ein Textfeld setzen, dann):
-```bash
-ydotool type -- "Hallo Welt"
-```
+Open **System Settings -> Privacy & Security** and allow Terminal or the Python app you use to launch WhisprTap:
 
-### 3. Python-Umgebung erstellen
-
-```bash
-python3 -m venv ~/.whisprtap/venv
-source ~/.whisprtap/venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 4. App starten
-
-```bash
-source ~/.whisprtap/venv/bin/activate
-python3 main.py
-```
-
-Beim **ersten Start** lädt faster-whisper das Whisper-Medium-Modell automatisch (~1,5 GB). Danach läuft alles vollständig offline.
-
----
-
-## Bedienung
-
-| Aktion | Ergebnis |
+| Area | Purpose |
 |---|---|
-| Hotkey drücken | Aufnahme startet (rotes Icon im Tray) |
-| Hotkey nochmal drücken | Aufnahme endet, Transkription beginnt |
-| Text fertig → Cursor in Textfeld | Text wird direkt eingefügt |
-| Text fertig → kein Textfeld fokussiert | Text landet in der Zwischenablage |
+| Microphone | Audio recording |
+| Accessibility | Global hotkey and Auto-Paste |
 
-Standard-Hotkey: `F9`
+WhisprTap usually needs to be restarted after permission changes.
 
----
+## Usage
 
-## Einstellungen
-
-Rechtsklick auf das Tray-Icon → **Einstellungen...**
-
-| Option | Beschreibung |
+| Action | Result |
 |---|---|
-| Hotkey | Taste zum Starten/Stoppen der Aufnahme |
-| Modellgröße | `tiny` (schnell) bis `large` (genau) |
-| Sprache | `de`, `en`, `auto`, … |
-| Auto-Paste | Text direkt eintippen oder nur in Zwischenablage |
-| Mikrofon | Eingabegerät wählen oder System-Standard |
+| Press the hotkey | Recording starts |
+| Press the hotkey again | Recording stops and transcription starts |
+| Auto-Paste enabled | Text is pasted with Command-V |
+| Auto-Paste disabled | Text stays in the clipboard |
 
----
+Default hotkey: `f9`
 
-## Session-Typ prüfen
+## Settings
+
+Menu bar -> **WhisprTap** -> **Settings...**
+
+| Option | Description |
+|---|---|
+| Hotkey | Key used to start and stop recording |
+| Model | `tiny`, `base`, `small`, `medium`, `large-*`, or Distil models |
+| Language | German, English, or automatic detection |
+| Auto-Paste | Paste the transcript directly or only copy it |
+| Microphone | Input device or System Default |
+| Launch at Login | Create a LaunchAgent at `~/Library/LaunchAgents/com.whisprtap.plist` |
+
+Settings are stored in `config.json` in the project directory. Models are stored in `~/.whisprtap/models` by default.
+
+## Development
 
 ```bash
-echo $XDG_SESSION_TYPE   # "x11" oder "wayland"
+.venv/bin/python -m unittest discover -s tests
+.venv/bin/python -m compileall -q .
 ```
 
-### X11
-
-Text-Eingabe läuft via `xdotool type`. Keine Sonderrechte nötig.
-
-### Wayland (GNOME)
-
-GNOME unterstützt kein virtuelles Keyboard-Protokoll (`zwp_virtual_keyboard_v1`). Deshalb wird `ydotool` mit direktem `/dev/uinput`-Zugriff verwendet. Voraussetzung: Schritt **2** der Installation oben.
-
----
-
-## Konfigurationsdatei
-
-`config.json` wird beim ersten Start automatisch angelegt:
-
-```json
-{
-  "hotkey": "f9",
-  "model_size": "medium",
-  "language": "de",
-  "auto_paste": true,
-  "model_dir": "~/.whisprtap/models/",
-  "input_device": null
-}
-```
-
-`input_device: null` bedeutet System-Standard. Einen bestimmten Index setzen entspricht dem Gerät aus `python3 -c "import sounddevice; print(sounddevice.query_devices())"`.
-
----
-
-## Fehlerbehebung
-
-**„ydotoold backend unavailable / failed to open uinput device"**
-→ Udev-Regel fehlt oder Nutzer nicht in `input`-Gruppe. Schritt 2 der Installation ausführen.
-
-**„Aufnahme zu kurz"**
-→ Hotkey wurde zu kurz gehalten (< 0,5 Sekunden). Einfach nochmal versuchen.
-
-**„Kein Text erkannt"**
-→ Whisper hat nur Stille oder Hintergrundgeräusche aufgenommen. VAD-Filter aktiv — kurze Geräusche werden herausgefiltert.
-
-**Text landet in Zwischenablage statt direkt eingefügt zu werden**
-→ Auto-Paste in den Einstellungen aktivieren, oder auf Wayland: Schritt 2 der Installation ausführen.
-
----
-
-## Mac (Apple Silicon) — spätere Portierung
-
-| Komponente | Linux | macOS |
-|---|---|---|
-| Whisper | `faster-whisper` | `mlx-whisper` |
-| Tray | `pystray` | `rumps` |
-| Text einfügen | `xdotool` / `ydotool` | `pyautogui` |
-| Hotkey | `evdev` | `pynput` |
-
-Kernlogik (`recorder.py`, `transcriber.py`, `config.py`, `main.py`) bleibt unverändert.
+WhisprTap is intentionally macOS-only. Non-macOS launches exit in `main.py` with a clear error message.
