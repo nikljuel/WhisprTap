@@ -1,10 +1,10 @@
 # WhisprTap
 
-WhisprTap is a local push-to-talk transcription app for macOS. Press the hotkey, speak, press the hotkey again, and WhisprTap transcribes with `faster-whisper`, copies the text to the clipboard, and can paste it into the active app.
+WhisprTap is a macOS-only menu bar app for local push-to-talk transcription. Press the hotkey, speak, press the hotkey again, and WhisprTap transcribes with `faster-whisper`, copies the text to the clipboard, and can paste it into the active app with Command-V.
 
 ## Requirements
 
-- macOS on Intel or Apple Silicon
+- macOS on Intel or Apple Silicon. Other operating systems are not supported.
 - Python 3.10+
 - Microphone permission for Terminal or the Python app you use to launch WhisprTap
 - Accessibility permission for Terminal or the Python app, required for the global hotkey and Auto-Paste
